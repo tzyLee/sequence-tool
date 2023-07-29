@@ -10,14 +10,14 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:sequence.helloWorld"
+    "onCommand:sequence.insertSequence"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "sequence.helloWorld",
-        "title": "Hello World"
+        "command": "sequence.insertSequence",
+        "title": "Insert custom sequence with multi-cursors"
       }
     ]
   },
