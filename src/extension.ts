@@ -69,13 +69,13 @@ export function deactivate() { }
 
 
 function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBoxValidationMessage | string] {
-	let formatter = (n: number) => n.toString();
+	let formatter = (n: number) => n.toString().replace(/[\r\n]/g, '');
 	if (!v) {
 		// initial empty input won't reach here,
 		// clear the previews after input box is empty
 		return [null, formatter, { message: 'Input is empty', severity: vscode.InputBoxValidationSeverity.Info }];
 	}
-	const match = (/^(?:(?:(?:(?<fillChar>(?!\.)[\D0])(?<align>[<>])?)?(?<width>[1-9]\d*))?(?:\.(?<precision>\d+))?(?:(?:(?<spec>[bodhxfc])|(?:b(?<base>\d+))))?,)?(?:(?<init>[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[Ee][+-]?\d+)?)?(?:,(?<expr>.+))?)?$/).exec(v);
+	const match = (/^(?:(?:(?:(?<fillChar>(?!\.)[\D0])(?<align>[<>])?)?(?<width>[1-9]\d*))?(?:\.(?<precision>\d+))?(?:(?:(?<spec>[bodhxHXfc])|(?:b(?<base>\d+))))?,)?(?:(?<init>[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[Ee][+-]?\d+)?)?(?:,(?<expr>.+))?)?$/).exec(v);
 	let init = 0;
 	let stepFunc = (p: number, i: number) => p + 1;
 	let Constructor: SequenceGenConstructor = PrevSequenceGen;
@@ -95,13 +95,23 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 			case 'b': base = 2; break;
 			case 'o': base = 8; break;
 			case 'd': base = 10; break;
-			case 'x': case 'h': base = 16; break;
+			case 'X': case 'H': case 'x': case 'h': base = 16; break;
 			default: if (gbase) {
 				base = gbase;
 			}
 		}
-		formatter = (n: number) => Math.trunc(n).toString(base)
+		if (groups.spec == groups.spec.toUpperCase()) {
+			// For X and H
+			formatter = (n: number) => Math.trunc(n).toString(base).toUpperCase()
+		} else {
+			formatter = (n: number) => Math.trunc(n).toString(base)
+		}
 		formatCmd = `base=${base}`
+	}
+	// charcode
+	if (groups.spec == 'c') {
+		formatter = (n: number) => String.fromCharCode(n).replace(/[\r\n]/g, '')
+		formatCmd = `spec=char`
 	}
 	// precision: only supports decimal floating point
 	if (groups.spec == 'f') {
