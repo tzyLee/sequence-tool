@@ -75,7 +75,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		// clear the previews after input box is empty
 		return [null, formatter, { message: 'Input is empty', severity: vscode.InputBoxValidationSeverity.Info }];
 	}
-	const match = (/^(?:(?:(?:(?<fillChar>(?!\.)[\D0])(?<align>[<>])?)?(?<width>[1-9]\d*))?(?:\.(?<precision>\d+))?(?:(?:(?<spec>[bodhxHXfc])|(?:b(?<base>\d+))))?,)?(?:(?<init>[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[Ee][+-]?\d+)?)?(?:,(?<expr>.+))?)?$/).exec(v);
+	const match = (/^(?:(?:(?:(?<fillChar>(?![\.\,b])[\D0])(?<align>[<>])?)?(?<width>[1-9]\d*))?(?:\.(?<precision>\d+))?(?:(?:(?<spec>[bodhxHXfc])|(?:b(?<base>\d+))))?,)?(?:(?<init>[^,]+)?(?:,(?<expr>.+))?)?$/).exec(v);
 	let init = 0;
 	let stepFunc = (p: number, i: number) => p + 1;
 	let Constructor: SequenceGenConstructor = PrevSequenceGen;
@@ -87,8 +87,39 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	let exprCmd = '(p, i) => p+1'
 	// groups is not null if there exists any named group
 	const groups = match.groups!;
+
+	try {
+		if (groups.expr) {
+			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`)
+			exprCmd = `(p,i) => ${groups.expr}`
+		}
+		if (groups.init) {
+			if (/^[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[Ee][+-]?\d+)?$/.test(groups.init)) {
+				init = parseFloat(groups.init);
+				initCmd = groups.init
+			}
+			else if (/^[a-zA-Z]+$/.test(groups.init)) {
+				init = fromSpreadSheet(groups.init);
+				initCmd = `letter"${groups.init}"`;
+				formatter = (n: number) => toSpreadSheet(n, /^[a-z]$/.test(groups.init[0]));
+			}
+			else {
+				initCmd = `unk"${groups.init}"=1`
+			}
+		} else {
+			if (groups.expr && !/\bp\b/.test(groups.expr)) {
+				// Use index gen if there's no inital value and the expression does not contain p
+				init = stepFunc(0, 0);
+				initCmd = init.toString()
+				Constructor = IndexSequenceGen;
+			}
+		}
+	} catch (e: any) {
+		return [null, formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}] Invalid function string: "${e?.message ?? v}"`, severity: vscode.InputBoxValidationSeverity.Warning }]
+	}
+
 	// base conversion: only supports integer
-	if (groups.spec != 'c' && groups.spec != 'f' && groups.spec) {
+	if (groups.spec != 'c' && groups.spec != 'f' && groups.spec || groups.base) {
 		let base = 10;
 		const gbase = parseInt(groups.base)
 		switch (groups.spec) {
@@ -100,7 +131,8 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				base = gbase;
 			}
 		}
-		if (groups.spec == groups.spec.toUpperCase()) {
+		base = Math.max(2, Math.min(36, base))
+		if (groups.spec && groups.spec == groups.spec.toUpperCase()) {
 			// For X and H
 			formatter = (n: number) => Math.trunc(n).toString(base).toUpperCase()
 		} else {
@@ -155,29 +187,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		}
 		formatCmd = `0>${groups.width},2's`
 	}
-	try {
-		if (groups.expr) {
-			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`)
-			exprCmd = `(p,i) => ${groups.expr}`
-		}
-		if (groups.init) {
-			if (groups.init) {
-				init = parseFloat(groups.init);
-				initCmd = groups.init
-			}
-		} else {
-			if (groups.expr && !/\bp\b/.test(groups.expr)) {
-				// Use index gen if there's no inital value and the expression does not contain p
-				init = stepFunc(0, 0);
-				initCmd = init.toString()
-				Constructor = IndexSequenceGen;
-			}
-		}
-	} catch (e: any) {
-		return [null, formatter, { message: `Invalid function string: "${e?.message ?? v}"`, severity: vscode.InputBoxValidationSeverity.Warning }]
-	}
-
-	return [new Constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}],[${initCmd}],[${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }]
+	return [new Constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }]
 }
 
 function sortSelection(a: vscode.Selection, b: vscode.Selection): number {
@@ -257,4 +267,26 @@ class IndexSequenceGen implements Iterator<number, number, number> {
 
 function length(p: vscode.Selection) {
 	return p.end.character - p.start.character
+}
+
+function fromSpreadSheet(s: string) {
+	let ret = 0;
+	s = s.toLowerCase();
+	const n = s.length;
+	for (let i = 0; i < n; i++) {
+		ret = ret * 26 + (s.charCodeAt(i) - 96);
+	}
+	return ret;
+}
+
+function toSpreadSheet(n: number, lower: boolean = true) {
+	let ret = '';
+	// without n--, f(0) == 'A'
+	// use n-- to make g(1) == 'A'
+	n--;
+	const offset = lower ? 97 : 65; // 'a' or 'A'
+	for (; n >= 0; n = Math.floor(n / 26) - 1) {
+		ret = String.fromCharCode(n % 26 + offset) + ret;
+	}
+	return ret
 }
