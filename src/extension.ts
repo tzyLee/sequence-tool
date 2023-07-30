@@ -26,32 +26,22 @@ export function activate(context: vscode.ExtensionContext) {
 
 			let editMade = false;
 			const initialLengths = [...editor.selections].sort(sortSelection).map(s => length(s));
-			// const sequenceSpec = await vscode.window.showInputBox({
-			// 	title: 'Enter sequence command',
-			// 	placeHolder: 'format: [initialValue][,[(p: prev, i: index) expr]',
-			// 	async validateInput(value) {
-			// 		let [gen, msg] = getGenerator(value);
-			// 		if (!gen) {
-			// 			// clear previews when gen == null
-			// 			gen = new IndexSequenceGen(0, () => '');
-			// 		}
-			// 		if (editMade) {
-			// 			await vscode.commands.executeCommand('undo')
-			// 		}
-			// 		await insertSequence(editor, initialLengths, gen, { undoStopBefore: !editMade, undoStopAfter: false }, true);
-			// 		editMade = true;
-			// 		return msg;
-			// 	}
-			// });
-
-			const input = vscode.window.createInputBox();
-			input.title = 'Enter sequence command';
-			input.placeholder = 'format: [initialValue][,[(p: prev, i: index) expr]';
-
-			let sequenceSpec = await showCustomInput({ title: 'Enter sequence command', placeHolder: 'format: [initialValue][,[(p: prev, i: index) expr]' });
-
-
-
+			const sequenceSpec = await vscode.window.showInputBox({
+				title: 'Enter sequence command',
+				placeHolder: 'format: [initialValue][,[(p: prev, i: index) expr]',
+				async validateInput(value) {
+					let [gen, msg] = getGenerator(value);
+					if (!gen) {
+						// clear previews when gen == null
+						gen = new IndexSequenceGen(0, () => '');
+					}
+					// When the inputbox is active, the previews cannot be clear with 'undo' command
+					// the text in the inputbox would be undoed instead
+					await insertSequence(editor, initialLengths, gen, { undoStopBefore: !editMade, undoStopAfter: false }, true, editMade);
+					editMade = true;
+					return msg;
+				}
+			});
 
 			if (sequenceSpec) {
 				const [gen, _] = getGenerator(sequenceSpec);
@@ -110,45 +100,39 @@ function sortSelection(a: vscode.Selection, b: vscode.Selection): number {
 	);
 }
 
-async function insertSequence(editor: vscode.TextEditor, initialLengths: number[], gen: SequenceGen, option: EditOption, isPreview: boolean) {
-	let res = await editor.edit((builder) => {
+async function insertSequence(editor: vscode.TextEditor, initialLengths: number[], gen: SequenceGen, option: EditOption, isPreview: boolean, deleteBeforeInsert: boolean = false) {
+	return await editor.edit((builder) => {
 		const selections = [...editor.selections].sort(sortSelection);
 		let visibleRange = editor.visibleRanges[0];
 		if (isPreview) {
 			editor.visibleRanges.forEach((r) => { visibleRange = visibleRange.union(r) });
 		}
-		console.log('Before:')
-		selections.forEach((s) => console.log(`start: line[${s.start.line}]char[${s.start.character}], end: line[${s.end.line}]char[${s.end.character}]`))
 		// always insert at the end of selections
 		initialLengths.forEach((dChar, i) => {
+			// Still calculates replacement even when the selection is out of preview range
 			let val = gen.next(i).value;
 			if (isPreview && !visibleRange.contains(selections[i])) {
 				// skip preview of invisible parts
 				return;
 			}
-			// use replace to remove previous preview
-			// (for undo command, vscode undos the active element,
-			// in this case, the InputBox itself is undo'ed)
 
-			// because the selection may move after insertion
-			// the range start position is not initial start position
-			builder.replace(new vscode.Range(selections[i].start.translate(0, +dChar), selections[i].end), (val === undefined || val === null) ? '' : val.toString())
-			// builder.insert(selections[i].end, (val === undefined || val === null) ? '' : val.toString())
-			// TODO: the selection is replaced when two selections are next to each other
+			if (deleteBeforeInsert) {
+				const r = new vscode.Range(selections[i].start.translate(0, +dChar), selections[i].end)
+				builder.delete(r)
+			}
+
+			// `delete` + `insert` should be equal to one `replace` call
+			// But when two selections overlap, vscode automatically merges them (which reduces the total number of selections),
+			// so here we separate delete and insert calls instead.
+			builder.insert(selections[i].end, (val === undefined || val === null) ? '' : val.toString())
 		})
 	}, option)
-	console.log('After:')
-	const newSelection = [...editor.selections].sort(sortSelection)
-	newSelection.forEach((s) => console.log(`start: line[${s.start.line}]char[${s.start.character}], end: line[${s.end.line}]char[${s.end.character}]`))
-	console.log('end')
-	return res
 }
-
 
 class PrevSequenceGen implements Iterator<number, number, number> {
 	constructor(private value: number, private stepFunc: StepFunction) {
 	}
-
+	// Calculates next value based on the previous value
 	public next(index: number): IteratorResult<number> {
 		const value = this.value;
 		this.value = this.stepFunc(this.value, index);
@@ -161,7 +145,7 @@ class PrevSequenceGen implements Iterator<number, number, number> {
 class IndexSequenceGen implements Iterator<number, number, number> {
 	constructor(private value: number, private stepFunc: StepFunction) {
 	}
-
+	// Calculates next value based on the index
 	public next(index: number): IteratorResult<number> {
 		this.value = this.stepFunc(this.value, index);
 		return {
@@ -175,111 +159,3 @@ class IndexSequenceGen implements Iterator<number, number, number> {
 function length(p: vscode.Selection) {
 	return p.end.character - p.start.character
 }
-
-// src/vs/platform/quickinput/browser/quickInput.ts
-function
-	showCustomInput(options: vscode.InputBoxOptions = {}, token?: vscode.CancellationToken): Promise<string | undefined> {
-	return new Promise<string | undefined>((resolve) => {
-		if (token?.isCancellationRequested) {
-			resolve(undefined);
-			return;
-		}
-		const input = vscode.window.createInputBox();
-		// const validateInput = options.validateInput || (() => <Promise<undefined>>Promise.resolve(undefined));
-
-
-		const editor = vscode.window.activeTextEditor;
-		if (!editor) {
-			vscode.window.showErrorMessage("Active editor not found!");
-			return;
-		}
-
-		let editMade = false;
-		const initialLengths = [...editor.selections].sort(sortSelection).map(s => length(s));
-		const validateInput = async (value: string) => {
-			let [gen, msg] = getGenerator(value);
-			if (!gen) {
-				// clear previews when gen == null
-				gen = new IndexSequenceGen(0, () => '');
-			}
-			input.enabled = false;
-			if (editMade) {
-				// editor.revealRange(editor.visibleRanges[0], vscode.TextEditorRevealType.Default)
-				// await vscode.commands.executeCommand('undo')
-			}
-			await insertSequence(editor, initialLengths, gen, { undoStopBefore: !editMade, undoStopAfter: false }, true);
-			editMade = true;
-			input.enabled = true;
-			return msg;
-		}
-
-		// function debounce<T>(func: vscode.Event<T>, timeout: number = 200) {
-		// 	let timeoutID: NodeJS.Timeout;
-		// 	return function () {
-		// 		timeoutID && clearTimeout(timeoutID);
-		// 		timeoutID = setTimeout(function () {
-		// 			func.apply(scope, Array.prototype.slice.call(args));
-		// 		}, timeout);
-		// 	}
-		// }
-
-
-		// const onDidValueChange = vscode.Event.debounce(input.onDidChangeValue, (last, cur) => cur, 100);
-		// const onDidValueChange = debounce(input.onDidChangeValue, (last, cur) => cur, 100);
-		let validationValue = options.value || '';
-		let validation = Promise.resolve(validateInput(validationValue));
-		const disposables = [
-			input,
-			// onDidValueChange((value: string) => {
-			input.onDidChangeValue((value: string) => {
-				if (value !== validationValue) {
-					validation = Promise.resolve(validateInput(value));
-					validationValue = value;
-				}
-				validation.then(result => {
-					if (value === validationValue) {
-						input.validationMessage = result;
-					}
-				});
-			}),
-			input.onDidAccept(() => {
-				const value = input.value;
-				if (value !== validationValue) {
-					validation = Promise.resolve(validateInput(value));
-					validationValue = value;
-				}
-				validation.then(result => {
-					if (!result || (!isString(result) && result.severity !== vscode.InputBoxValidationSeverity.Error)) {
-						resolve(value);
-						input.hide();
-					} else if (value === validationValue) {
-						input.validationMessage = result;
-					}
-				});
-			}),
-			token?.onCancellationRequested(() => {
-				input.hide();
-			}),
-			input.onDidHide(() => {
-				while (disposables.length) {
-					const x = disposables.pop();
-					x?.dispose();
-				}
-				resolve(undefined);
-			}),
-		];
-
-		input.title = options.title;
-		input.value = options.value || '';
-		input.valueSelection = options.valueSelection;
-		input.prompt = options.prompt;
-		input.placeholder = options.placeHolder;
-		input.password = !!options.password;
-		// input.ignoreFocusOut = !!options.ignoreFocusLost;
-		input.show();
-	});
-}
-
-function isString(data: unknown): data is string {
-	return typeof data === 'string';
-};
