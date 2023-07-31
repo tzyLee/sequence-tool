@@ -2,7 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
 
-type EditOption = { undoStopAfter: boolean, undoStopBefore: boolean }
+type EditOption = { undoStopAfter: boolean, undoStopBefore: boolean; };
 type SequenceGen = Iterator<number, number, number>;
 type StepFunction = (prev: number, index: number) => any;
 type Formatter = (n: number) => string;
@@ -10,7 +10,7 @@ interface SequenceGenConstructor {
 	new(init: number, stepFunc: StepFunction): SequenceGen;
 }
 
-const formatPrompt = 'format: [[fillChar][align][width][.prec][spec] ","][init]["," [expr]]'
+const formatPrompt = 'format: [[fillChar][align][width][.prec][spec] ","][init]["," [expr]]';
 
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
@@ -49,14 +49,14 @@ export function activate(context: vscode.ExtensionContext) {
 			if (sequenceSpec) {
 				const [gen, fmt, _] = parseCommand(sequenceSpec);
 				if (gen) {
-					await vscode.commands.executeCommand('undo')
+					await vscode.commands.executeCommand('undo');
 					await insertSequence(editor, initialSelections, gen, fmt, {
 						undoStopBefore: false,
 						undoStopAfter: true
 					}, false);
 				}
 			} else {
-				await vscode.commands.executeCommand('undo')
+				await vscode.commands.executeCommand('undo');
 			}
 		}
 	);
@@ -75,28 +75,40 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		// clear the previews after input box is empty
 		return [null, formatter, { message: 'Input is empty', severity: vscode.InputBoxValidationSeverity.Info }];
 	}
-	const match = (/^(?:(?:(?:(?<fillChar>(?![\.\,b])[\D0])(?<align>[<>])?)?(?<width>[1-9]\d*))?(?:\.(?<precision>\d+))?(?:(?:(?<spec>[bodhxHXfc])|(?:b(?<base>\d+))))?,)?(?:(?<init>[^,]+)?(?:,(?<expr>.+))?)?$/).exec(v);
-	let init = 0;
+	const match = (/^(?:(?:(?<fillChar>.)(?<align>[<>]))?(?<fillZero>0)?(?<width>[1-9]\d*)?(?:\.(?<precision>\d+))?(?<spec>[bodhxHXfc])?(?:b(?<base>\d+))?,)?(?:(?<init>[^,]+)?(?:,(?<expr>.+))?)?$/).exec(v);
+	let init: any = 0;
 	let stepFunc = (p: number, i: number) => p + 1;
 	let Constructor: SequenceGenConstructor = PrevSequenceGen;
 	if (!match) {
-		return [new Constructor(init, stepFunc), formatter, { message: `The command does not match the ${formatPrompt}`, severity: vscode.InputBoxValidationSeverity.Warning }]
+		return [new Constructor(init, stepFunc), formatter, { message: `The command does not match the ${formatPrompt}`, severity: vscode.InputBoxValidationSeverity.Warning }];
 	}
-	let formatCmd = 'default'
-	let initCmd = '0'
-	let exprCmd = '(p, i) => p+1'
+	let formatCmd = 'default';
+	let initCmd = '0';
+	let exprCmd = '(p, i) => p+1';
 	// groups is not null if there exists any named group
 	const groups = match.groups!;
 
 	try {
 		if (groups.expr) {
-			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`)
-			exprCmd = `(p,i) => ${groups.expr}`
+			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`);
+			exprCmd = `(p,i) => ${groups.expr}`;
 		}
 		if (groups.init) {
-			if (/^[+-]?(?:\d+|\d*\.\d+|\d+\.\d*)(?:[Ee][+-]?\d+)?$/.test(groups.init)) {
+			const numMatch = /^[+-]?(?:\d+|\d*\.(?<frac1>\d+)|\d+\.(?<frac2>\d*))(?:[Ee][+-]?\d+)?$/.exec(groups.init);
+			if (numMatch) {
 				init = parseFloat(groups.init);
-				initCmd = groups.init
+				initCmd = groups.init;
+				// Infer precision from initial value
+				if (numMatch?.groups && (!groups.spec || groups.spec === 'f' && !groups.precision)) {
+					if (numMatch.groups?.frac1) {
+						groups.spec = 'f';
+						groups.precision = numMatch.groups.frac1;
+					}
+					if (numMatch.groups?.frac2) {
+						groups.spec = 'f';
+						groups.precision = numMatch.groups.frac2;
+					}
+				}
 			}
 			else if (/^[a-zA-Z]+$/.test(groups.init)) {
 				init = fromSpreadSheet(groups.init);
@@ -104,24 +116,29 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				formatter = (n: number) => toSpreadSheet(n, /^[a-z]$/.test(groups.init[0]));
 			}
 			else {
-				initCmd = `unk"${groups.init}"=1`
+				if (groups.expr) {
+					init = groups.init;
+					initCmd = `unk"${groups.init}"`;
+				} else {
+					initCmd = `unk"${groups.init}"=1`;
+				}
 			}
 		} else {
 			if (groups.expr && !/\bp\b/.test(groups.expr)) {
 				// Use index gen if there's no inital value and the expression does not contain p
 				init = stepFunc(0, 0);
-				initCmd = init.toString()
+				initCmd = init.toString();
 				Constructor = IndexSequenceGen;
 			}
 		}
 	} catch (e: any) {
-		return [null, formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}] Invalid function string: "${e?.message ?? v}"`, severity: vscode.InputBoxValidationSeverity.Warning }]
+		return [null, formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}] Invalid function string: "${e?.message ?? v}"`, severity: vscode.InputBoxValidationSeverity.Warning }];
 	}
 
 	// base conversion: only supports integer
-	if (groups.spec != 'c' && groups.spec != 'f' && groups.spec || groups.base) {
+	if (groups.spec !== 'c' && groups.spec !== 'f' && groups.spec || groups.base) {
 		let base = 10;
-		const gbase = parseInt(groups.base)
+		const gbase = parseInt(groups.base);
 		switch (groups.spec) {
 			case 'b': base = 2; break;
 			case 'o': base = 8; break;
@@ -131,63 +148,66 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				base = gbase;
 			}
 		}
-		base = Math.max(2, Math.min(36, base))
-		if (groups.spec && groups.spec == groups.spec.toUpperCase()) {
+		base = Math.max(2, Math.min(36, base));
+		if (groups.spec && groups.spec === groups.spec.toUpperCase()) {
 			// For X and H
-			formatter = (n: number) => Math.trunc(n).toString(base).toUpperCase()
+			formatter = (n: number) => Math.trunc(n).toString(base).toUpperCase();
 		} else {
-			formatter = (n: number) => Math.trunc(n).toString(base)
+			formatter = (n: number) => Math.trunc(n).toString(base);
 		}
-		formatCmd = `base=${base}`
+		formatCmd = `base=${base}`;
 	}
 	// charcode
-	if (groups.spec == 'c') {
-		formatter = (n: number) => String.fromCharCode(n).replace(/[\r\n]/g, '')
-		formatCmd = `spec=char`
+	if (groups.spec === 'c') {
+		formatter = (n: number) => String.fromCharCode(n).replace(/[\r\n]/g, '');
+		formatCmd = `spec=char`;
 	}
 	// precision: only supports decimal floating point
-	if (groups.spec == 'f') {
+	if (groups.spec === 'f') {
 		let precision = 6;
-		const gprec = parseInt(groups.precision)
+		const gprec = parseInt(groups.precision);
 		if (gprec) {
 			precision = gprec;
 		}
-		formatter = (n: number) => n.toFixed(precision)
-		formatCmd = `precision=${precision}f`
+		formatter = (n: number) => n.toFixed(precision);
+		formatCmd = `precision=${precision}f`;
+	}
+	if (groups.fillZero && !groups.fillChar) {
+		groups.fillChar = groups.fillZero;
 	}
 	// padding occurs after the number is formatted
 	if (groups.width) {
 		let padLeft = true;
 		let fill = ' ';
 		let width: number | undefined = undefined;
-		if (groups.align == '<') {
+		if (groups.align === '<') {
 			padLeft = false;
 		}
 		if (groups.width) {
-			width = parseInt(groups.width)
-			fill = groups.fillChar || ' '
+			width = parseInt(groups.width);
+			fill = groups.fillChar || ' ';
 			const prevFormatter = formatter;
-			formatter = (n: number) => padLeft ? prevFormatter(n).padStart(width!!, fill) : prevFormatter(n).padEnd(width!!, fill)
+			formatter = (n: number) => padLeft ? prevFormatter(n).padStart(width!!, fill) : prevFormatter(n).padEnd(width!!, fill);
 		}
-		const padCmd = `${fill}${padLeft ? '>' : '<'}${width !== undefined ? width : ''}`
-		formatCmd = formatCmd ? `${padCmd},${formatCmd}` : padCmd
+		const padCmd = `${fill}${padLeft ? '>' : '<'}${width !== undefined ? width : ''}`;
+		formatCmd = formatCmd ? `${padCmd},${formatCmd}` : padCmd;
 	}
 	// 2's complement
-	if (groups.spec == 'b' && groups.width && groups.fillChar == '0' && groups.align != '<') {
-		const bitwidth = parseInt(groups.width)
+	if (groups.spec === 'b' && groups.width && groups.fillChar === '0' && groups.align !== '<') {
+		const bitwidth = parseInt(groups.width);
 		const N = 2 ** bitwidth;
 		formatter = (n: number) => {
 			let nint = Math.trunc(n);
 			let fillChar = '0';
 			if (nint < 0) {
 				nint = N + nint;
-				fillChar = '1'
+				fillChar = '1';
 			}
-			return nint.toString(2).padStart(bitwidth, fillChar)
-		}
-		formatCmd = `0>${groups.width},2's`
+			return nint.toString(2).padStart(bitwidth, fillChar);
+		};
+		formatCmd = `0>${groups.width},2's`;
 	}
-	return [new Constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }]
+	return [new Constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }];
 }
 
 function sortSelection(a: vscode.Selection, b: vscode.Selection): number {
@@ -201,7 +221,7 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 		const selections = [...editor.selections].sort(sortSelection);
 		let visibleRange = editor.visibleRanges[0];
 		if (isPreview) {
-			editor.visibleRanges.forEach((r) => { visibleRange = visibleRange.union(r) });
+			editor.visibleRanges.forEach((r) => { visibleRange = visibleRange.union(r); });
 		}
 		// always insert at the end of selections
 		const len = initialSelections.length;
@@ -221,21 +241,22 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 
 			if (deleteBeforeInsert) {
 				let dChar = length(initSel);
-				let r = new vscode.Range(sel.start.translate(0, +dChar), sel.end)
+				let r = new vscode.Range(sel.start.translate(0, +dChar), sel.end);
+				// r.start !== initSel.end (not always equal)
 				if (sel.isEmpty) {
 					// If the selection is empty, it is in cursor mode
 					// The selection is a zero-size selection and moves after insert
-					r = r.with(initSel.end, sel.end)
+					r = r.with(initSel.end, sel.end);
 				}
-				builder.delete(r)
+				builder.delete(r);
 			}
 
 			// `delete` + `insert` should be equal to one `replace` call
 			// But when two selections overlap, vscode automatically merges them (which reduces the total number of selections),
 			// so here we separate delete and insert calls instead.
-			builder.insert(sel.end, (val === undefined || val === null) ? '' : fmt(val))
+			builder.insert(sel.end, (val === undefined || val === null) ? '' : fmt(val));
 		}
-	}, option)
+	}, option);
 }
 
 class PrevSequenceGen implements Iterator<number, number, number> {
@@ -248,7 +269,7 @@ class PrevSequenceGen implements Iterator<number, number, number> {
 		return {
 			done: false,
 			value
-		}
+		};
 	}
 }
 class IndexSequenceGen implements Iterator<number, number, number> {
@@ -260,13 +281,13 @@ class IndexSequenceGen implements Iterator<number, number, number> {
 		return {
 			done: false,
 			value: this.value
-		}
+		};
 	}
 }
 
 
 function length(p: vscode.Selection) {
-	return p.end.character - p.start.character
+	return p.end.character - p.start.character;
 }
 
 function fromSpreadSheet(s: string) {
@@ -288,5 +309,5 @@ function toSpreadSheet(n: number, lower: boolean = true) {
 	for (; n >= 0; n = Math.floor(n / 26) - 1) {
 		ret = String.fromCharCode(n % 26 + offset) + ret;
 	}
-	return ret
+	return ret;
 }
