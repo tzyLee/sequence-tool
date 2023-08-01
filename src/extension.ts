@@ -10,6 +10,9 @@ type Formatter = (n: unknown) => string;
 interface SequenceGenConstructor {
 	new(init: unknown, stepFunc: StepFunction): SequenceGen;
 }
+interface CustomCommandConfig {
+	[key: string]: string;
+}
 
 const formatPrompt = 'format: [[fillChar][align][width][.prec][spec] ","][init]["," [expr]]';
 
@@ -20,53 +23,30 @@ export function activate(context: vscode.ExtensionContext) {
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
 	context.subscriptions.push(vscode.commands.registerCommand(
-		"sequence.insertSequence",
+		"sequence-tool.insertSequence",
 		async (...args) => {
 			const editor = vscode.window.activeTextEditor;
 			if (!editor) {
 				vscode.window.showErrorMessage("Active editor not found!");
 				return;
 			}
-			const initialSelections = [...editor.selections].sort(sortSelection);
-
-			let sequenceSpec = null;
+			const handler = new CommandHandler(editor);
+			let command = null;
 			if (args.length === 0 || !(args[0].command)) {
-				let editMade = false;
-				sequenceSpec = await vscode.window.showInputBox({
+				command = await vscode.window.showInputBox({
 					placeHolder: formatPrompt,
-					async validateInput(value) {
-						let [gen, fmt, msg] = parseCommand(value);
-						if (!gen) {
-							// clear previews when gen == null
-							gen = new IndexSequenceGen(0, () => '');
-						}
-						// When the inputbox is active, the previews cannot be clear with 'undo' command
-						// the text in the inputbox would be undoed instead
-						await insertSequence(editor, initialSelections, gen, fmt, { undoStopBefore: !editMade, undoStopAfter: false }, true, editMade);
-						editMade = true;
-						return msg;
-					}
+					validateInput: handler.doPreview.bind(handler)
 				});
-				// Clear preview
-				await vscode.commands.executeCommand('undo');
 			} else {
-				sequenceSpec = args[0].command;
+				command = args[0].command;
 			}
 
-			if (sequenceSpec) {
-				const [gen, fmt, _] = parseCommand(sequenceSpec);
-				if (gen) {
-					await insertSequence(editor, initialSelections, gen, fmt, {
-						undoStopBefore: false,
-						undoStopAfter: true
-					}, false);
-				}
-			}
+			await handler.execute(command);
 		}
 	));
 
 	context.subscriptions.push(vscode.commands.registerCommand(
-		'sequence.insertNLinesAfter',
+		'sequence-tool.insertNLinesAfter',
 		async () => {
 			const editor = vscode.window.activeTextEditor;
 			if (!editor) {
@@ -108,10 +88,96 @@ export function activate(context: vscode.ExtensionContext) {
 				editor.selections = newSel;
 			}
 		}));
+
+	context.subscriptions.push(vscode.commands.registerCommand(
+		"sequence-tool.useCommand",
+		async (...args) => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) {
+				vscode.window.showErrorMessage("Active editor not found!");
+				return;
+			}
+
+			const customCommands = vscode.workspace.getConfiguration().get("sequence-tool.customCommands") as CustomCommandConfig;
+			const handler = new CommandHandler(editor);
+
+			let command = '';
+			if (args.length > 0 && args[0]?.name && customCommands[args[0].name]) {
+				command = customCommands[args[0].name];
+			}
+
+			if (!command) {
+				const options = Object.keys(customCommands).map(name => ({
+					label: name,
+					description: customCommands[name]
+				} as vscode.QuickPickItem));
+
+				const pickedOption = await vscode.window.showQuickPick(options, {
+					matchOnDescription: true,
+					matchOnDetail: true,
+					placeHolder: 'Choose Command',
+					async onDidSelectItem(item: vscode.QuickPickItem) {
+						if (!item?.description) {
+							return;
+						}
+						await handler.doPreview(item.description);
+					}
+				});
+
+				command = pickedOption?.description ?? '';
+			}
+			await handler.execute(command);
+		}));
 }
 
 // this method is called when your extension is deactivated
 export function deactivate() { }
+
+class CommandHandler {
+	private editMade: boolean = false;
+	private initialSelections: vscode.Selection[];
+	constructor(private editor: vscode.TextEditor) {
+		this.initialSelections = [...editor.selections].sort(sortSelection);
+	}
+
+	async doPreview(command: string) {
+		let [gen, fmt, msg] = parseCommand(command);
+		if (!gen) {
+			// clear previews when gen == null
+			gen = new IndexSequenceGen(0, () => '');
+		}
+		// When the inputbox is active, the previews cannot be clear with 'undo' command
+		// the text in the inputbox would be undoed instead
+		await insertSequence(this.editor, this.initialSelections, gen, fmt, { undoStopBefore: !this.editMade, undoStopAfter: false }, true, this.editMade);
+		this.editMade = true;
+		return msg;
+	}
+
+	private async clearPreview() {
+		if (!this.editMade) {
+			return;
+		}
+		// Clear preview
+		await vscode.commands.executeCommand('undo');
+		// Make sure the undo only happens once
+		this.editMade = false;
+	}
+
+	async execute(command: string) {
+		// Attempt to clear preview even if the command is not valid
+		await this.clearPreview();
+		if (!command) {
+			return;
+		}
+		const [gen, fmt, _] = parseCommand(command);
+		if (gen) {
+			await insertSequence(this.editor, this.initialSelections, gen, fmt, {
+				undoStopBefore: false,
+				undoStopAfter: true
+			}, false);
+		}
+	}
+}
 
 
 function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBoxValidationMessage | string] {

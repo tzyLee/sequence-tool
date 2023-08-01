@@ -1,7 +1,7 @@
 {
-  "name": "sequence",
-  "displayName": "Sequence",
-  "description": "Input sequences",
+  "name": "sequence-tool",
+  "displayName": "Sequence Tool",
+  "description": "Input sequences with multi-cursor support",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.80.0"
@@ -14,22 +14,41 @@
   "contributes": {
     "commands": [
       {
-        "command": "sequence.insertSequence",
-        "title": "Insert custom sequence with multi-cursors"
+        "command": "sequence-tool.insertSequence",
+        "title": "Sequence Tool: Insert Custom Sequence With Multi-cursors"
       },
       {
-        "command": "sequence.insertNLinesAfter",
-        "title": "Insert N lines after cursor(s)"
+        "command": "sequence-tool.insertNLinesAfter",
+        "title": "Sequence Tool: Insert N Lines After Cursors"
+      },
+      {
+        "command": "sequence-tool.useCommand",
+        "title": "Sequence Tool: Use Previous Saved Commands"
       }
     ],
     "keybindings": [
       {
-        "command": "sequence.insertSequence",
+        "command": "sequence-tool.insertSequence",
         "key": "ctrl+alt+0",
         "mac": "cmd+alt+0",
         "when": "editorTextFocus"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Sequence Tool",
+      "properties": {
+        "sequence-tool.customCommands": {
+          "type": "object",
+          "default": {},
+          "description": "Save frequently used commands here, can be invoked via `sequence-tool.useCommand`.\nThe key can be any custom name, and the value should be the command to use",
+          "additionalProperties": {
+            "type": "string",
+            "description": "The command to use"
+          }
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "yarn run compile",
