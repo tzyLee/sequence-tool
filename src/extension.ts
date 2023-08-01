@@ -4,11 +4,11 @@ import * as vscode from "vscode";
 
 type EditOption = { undoStopAfter: boolean, undoStopBefore: boolean; };
 // The sequence could be non-numeric due to 'eval'
-type SequenceGen = Iterator<number, number, number>;
-type StepFunction = (prev: number, index: number) => any;
-type Formatter = (n: number) => string;
+type SequenceGen = Iterator<unknown, unknown, unknown>;
+type StepFunction = (prev: unknown, index: number) => unknown;
+type Formatter = (n: unknown) => string;
 interface SequenceGenConstructor {
-	new(init: number, stepFunc: StepFunction): SequenceGen;
+	new(init: unknown, stepFunc: StepFunction): SequenceGen;
 }
 
 const formatPrompt = 'format: [[fillChar][align][width][.prec][spec] ","][init]["," [expr]]';
@@ -21,42 +21,46 @@ export function activate(context: vscode.ExtensionContext) {
 	// The commandId parameter must match the command field in package.json
 	context.subscriptions.push(vscode.commands.registerCommand(
 		"sequence.insertSequence",
-		async () => {
+		async (...args) => {
 			const editor = vscode.window.activeTextEditor;
 			if (!editor) {
 				vscode.window.showErrorMessage("Active editor not found!");
 				return;
 			}
-
-			let editMade = false;
 			const initialSelections = [...editor.selections].sort(sortSelection);
-			const sequenceSpec = await vscode.window.showInputBox({
-				placeHolder: formatPrompt,
-				async validateInput(value) {
-					let [gen, fmt, msg] = parseCommand(value);
-					if (!gen) {
-						// clear previews when gen == null
-						gen = new IndexSequenceGen(0, () => '');
+
+			let sequenceSpec = null;
+			if (args.length === 0 || !(args[0].command)) {
+				let editMade = false;
+				sequenceSpec = await vscode.window.showInputBox({
+					placeHolder: formatPrompt,
+					async validateInput(value) {
+						let [gen, fmt, msg] = parseCommand(value);
+						if (!gen) {
+							// clear previews when gen == null
+							gen = new IndexSequenceGen(0, () => '');
+						}
+						// When the inputbox is active, the previews cannot be clear with 'undo' command
+						// the text in the inputbox would be undoed instead
+						await insertSequence(editor, initialSelections, gen, fmt, { undoStopBefore: !editMade, undoStopAfter: false }, true, editMade);
+						editMade = true;
+						return msg;
 					}
-					// When the inputbox is active, the previews cannot be clear with 'undo' command
-					// the text in the inputbox would be undoed instead
-					await insertSequence(editor, initialSelections, gen, fmt, { undoStopBefore: !editMade, undoStopAfter: false }, true, editMade);
-					editMade = true;
-					return msg;
-				}
-			});
+				});
+				// Clear preview
+				await vscode.commands.executeCommand('undo');
+			} else {
+				sequenceSpec = args[0].command;
+			}
 
 			if (sequenceSpec) {
 				const [gen, fmt, _] = parseCommand(sequenceSpec);
 				if (gen) {
-					await vscode.commands.executeCommand('undo');
 					await insertSequence(editor, initialSelections, gen, fmt, {
 						undoStopBefore: false,
 						undoStopAfter: true
 					}, false);
 				}
-			} else {
-				await vscode.commands.executeCommand('undo');
 			}
 		}
 	));
@@ -95,6 +99,13 @@ export function activate(context: vscode.ExtensionContext) {
 						builder.insert(selection.end, eol);
 					});
 				});
+				let newSel = [...editor.selections];
+				for (const oldSel of editor.selections) {
+					for (let i = oldSel.end.line - nLinesToInsert + 1, end = oldSel.end.line; i < end; i++) {
+						newSel.push(new vscode.Selection(i, 0, i, 0));
+					}
+				}
+				editor.selections = newSel;
 			}
 		}));
 }
@@ -104,7 +115,7 @@ export function deactivate() { }
 
 
 function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBoxValidationMessage | string] {
-	let formatter = (n: number) => n.toString().replace(/[\r\n]/g, '');
+	let formatter = (n: unknown) => n !== null && n !== undefined ? n.toString().replace(/[\r\n]/g, '') : '';
 	if (!v) {
 		// initial empty input won't reach here,
 		// clear the previews after input box is empty
@@ -112,7 +123,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	}
 	const match = (/^(?:(?:(?<fillChar>.)(?<align>[<>]))?(?<fillZero>0)?(?<width>[1-9]\d*)?(?:\.(?<precision>\d+))?(?<spec>[bodhxHXfc])?(?:b(?<base>\d+))?,)?(?:(?<init>[^,]+)?(?:,(?<expr>.+))?)?$/).exec(v);
 	let init: any = 0;
-	let stepFunc = (p: number, i: number) => p + 1;
+	let stepFunc = (p: unknown, i: number) => isNumber(p) ? p + 1 : 0;
 	let Constructor: SequenceGenConstructor = PrevSequenceGen;
 	if (!match) {
 		return [new Constructor(init, stepFunc), formatter, { message: `The command does not match the ${formatPrompt}`, severity: vscode.InputBoxValidationSeverity.Warning }];
@@ -130,10 +141,11 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 			exprCmd = `(p,i) => ${groups.expr}`;
 			// Infer precision from step
 			if ((!groups.spec || groups.spec === 'f' && !groups.precision)) {
-				const floatSeqMatch = /^p[+-](?:\d*\.(?<frac1>\d+)|\d+\.(?<frac2>\d*))$/.exec(groups.expr);
-				if (floatSeqMatch?.groups) {
-					groups.spec = 'f';
-					inferredPrecision = (floatSeqMatch.groups?.frac1?.length ?? floatSeqMatch.groups?.frac2?.length ?? 0);
+				for (const m of groups.expr.matchAll(/\bp[+-](?:\d*\.(?<frac1>\d+)|\d+\.(?<frac2>\d*))\b/g)) {
+					if (m?.groups) {
+						groups.spec = 'f';
+						inferredPrecision = Math.max(inferredPrecision, (m.groups?.frac1?.length ?? m.groups?.frac2?.length ?? 0));
+					}
 				}
 			}
 		}
@@ -144,7 +156,8 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				initCmd = groups.init;
 				// Infer precision from initial value
 				if ((!groups.spec || groups.spec === 'f' && !groups.precision)) {
-					if (numMatch?.groups) {
+					// numMatch can match a non-fraction number
+					if (numMatch?.groups?.frac1 || numMatch?.groups?.frac2) {
 						groups.spec = 'f';
 						inferredPrecision = Math.max(inferredPrecision, (numMatch.groups?.frac1?.length ?? numMatch.groups?.frac2?.length ?? 0));
 					}
@@ -153,7 +166,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 			else if (/^[a-zA-Z]+$/.test(groups.init)) {
 				init = fromSpreadSheet(groups.init);
 				initCmd = `letter"${groups.init}"`;
-				formatter = (n: number) => toSpreadSheet(n, /^[a-z]$/.test(groups.init[0]));
+				formatter = (n: unknown) => isNumber(n) ? toSpreadSheet(n, /^[a-z]$/.test(groups.init[0])) : '';
 			}
 			else {
 				try {
@@ -196,15 +209,15 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		base = Math.max(2, Math.min(36, base));
 		if (groups.spec && groups.spec === groups.spec.toUpperCase()) {
 			// For X and H
-			formatter = (n: number) => Math.trunc(n).toString(base).toUpperCase();
+			formatter = (n: unknown) => isNumber(n) ? Math.trunc(n).toString(base).toUpperCase() : '';
 		} else {
-			formatter = (n: number) => Math.trunc(n).toString(base);
+			formatter = (n: unknown) => isNumber(n) ? Math.trunc(n).toString(base) : '';
 		}
 		formatCmd = `base=${base}`;
 	}
 	// charcode
 	if (groups.spec === 'c') {
-		formatter = (n: number) => String.fromCodePoint(n).replace(/[\r\n]/g, '');
+		formatter = (n: unknown) => isNumber(n) ? String.fromCodePoint(n).replace(/[\r\n]/g, '') : '';
 		formatCmd = `spec=char`;
 	}
 	// precision: only supports decimal floating point
@@ -214,7 +227,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		if (gprec) {
 			precision = gprec;
 		}
-		formatter = (n: number) => n.toFixed(precision);
+		formatter = (n: unknown) => isNumber(n) ? n.toFixed(precision) : '';
 		formatCmd = `precision=${precision}f`;
 	}
 	if (groups.fillZero && !groups.fillChar) {
@@ -232,7 +245,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 			width = parseInt(groups.width);
 			fill = groups.fillChar || ' ';
 			const prevFormatter = formatter;
-			formatter = (n: number) => padLeft ? prevFormatter(n).padStart(width!!, fill) : prevFormatter(n).padEnd(width!!, fill);
+			formatter = (n: unknown) => padLeft ? prevFormatter(n).padStart(width!!, fill) : prevFormatter(n).padEnd(width!!, fill);
 		}
 		const padCmd = `${fill}${padLeft ? '>' : '<'}${width !== undefined ? width : ''}`;
 		formatCmd = formatCmd ? `${padCmd},${formatCmd}` : padCmd;
@@ -241,7 +254,10 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	if (groups.spec === 'b' && groups.width && groups.fillChar === '0' && groups.align !== '<') {
 		const bitwidth = parseInt(groups.width);
 		const N = 2 ** bitwidth;
-		formatter = (n: number) => {
+		formatter = (n: unknown) => {
+			if (!isNumber(n)) {
+				return '';
+			}
 			let nint = Math.trunc(n);
 			let fillChar = '0';
 			if (nint < 0) {
@@ -304,11 +320,11 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 	}, option);
 }
 
-class PrevSequenceGen implements Iterator<number, number, number> {
-	constructor(private value: number, private stepFunc: StepFunction) {
+class PrevSequenceGen implements Iterator<unknown, unknown, unknown> {
+	constructor(private value: unknown, private stepFunc: StepFunction) {
 	}
 	// Calculates next value based on the previous value
-	public next(index: number): IteratorResult<number> {
+	public next(index: number): IteratorResult<unknown> {
 		const value = this.value;
 		this.value = this.stepFunc(this.value, index);
 		return {
@@ -317,11 +333,11 @@ class PrevSequenceGen implements Iterator<number, number, number> {
 		};
 	}
 }
-class IndexSequenceGen implements Iterator<number, number, number> {
-	constructor(private value: number, private stepFunc: StepFunction) {
+class IndexSequenceGen implements Iterator<unknown, unknown, unknown> {
+	constructor(private value: unknown, private stepFunc: StepFunction) {
 	}
 	// Calculates next value based on the index
-	public next(index: number): IteratorResult<number> {
+	public next(index: number): IteratorResult<unknown> {
 		this.value = this.stepFunc(this.value, index);
 		return {
 			done: false,
@@ -333,6 +349,10 @@ class IndexSequenceGen implements Iterator<number, number, number> {
 
 function length(p: vscode.Selection) {
 	return p.end.character - p.start.character;
+}
+
+function isNumber(n: unknown): n is number {
+	return typeof n === 'number';
 }
 
 function fromSpreadSheet(s: string) {
