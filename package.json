@@ -9,15 +9,17 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:sequence.insertSequence"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "sequence.insertSequence",
         "title": "Insert custom sequence with multi-cursors"
+      },
+      {
+        "command": "sequence.insertNLinesAfter",
+        "title": "Insert N lines after cursor(s)"
       }
     ],
     "keybindings": [

@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 
 type EditOption = { undoStopAfter: boolean, undoStopBefore: boolean; };
+// The sequence could be non-numeric due to 'eval'
 type SequenceGen = Iterator<number, number, number>;
 type StepFunction = (prev: number, index: number) => any;
 type Formatter = (n: number) => string;
@@ -18,7 +19,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
-	let disposable = vscode.commands.registerCommand(
+	context.subscriptions.push(vscode.commands.registerCommand(
 		"sequence.insertSequence",
 		async () => {
 			const editor = vscode.window.activeTextEditor;
@@ -30,7 +31,6 @@ export function activate(context: vscode.ExtensionContext) {
 			let editMade = false;
 			const initialSelections = [...editor.selections].sort(sortSelection);
 			const sequenceSpec = await vscode.window.showInputBox({
-				// title: 'Enter sequence command',
 				placeHolder: formatPrompt,
 				async validateInput(value) {
 					let [gen, fmt, msg] = parseCommand(value);
@@ -59,9 +59,44 @@ export function activate(context: vscode.ExtensionContext) {
 				await vscode.commands.executeCommand('undo');
 			}
 		}
-	);
+	));
 
-	context.subscriptions.push(disposable);
+	context.subscriptions.push(vscode.commands.registerCommand(
+		'sequence.insertNLinesAfter',
+		async () => {
+			const editor = vscode.window.activeTextEditor;
+			if (!editor) {
+				vscode.window.showErrorMessage("Active editor not found!");
+				return;
+			}
+
+			const nlines = await vscode.window.showInputBox({
+				placeHolder: 'Number of line(s) to insert',
+				async validateInput(value) {
+					if (/^\s*\d+\s*$/.test(value)) {
+						return '';
+					}
+					return { message: 'Should be a nonnegative integer', severity: vscode.InputBoxValidationSeverity.Warning };
+				}
+			});
+			if (nlines) {
+				const nLinesToInsert = parseInt(nlines);
+				let eol = '\n';
+				switch (editor.document.eol) {
+					case vscode.EndOfLine.CRLF:
+						eol = '\r\n';
+						break;
+					case vscode.EndOfLine.LF:
+						break;
+				}
+				eol = eol.repeat(nLinesToInsert);
+				await editor.edit((builder) => {
+					editor.selections.forEach(selection => {
+						builder.insert(selection.end, eol);
+					});
+				});
+			}
+		}));
 }
 
 // this method is called when your extension is deactivated
@@ -85,6 +120,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	let formatCmd = 'default';
 	let initCmd = '0';
 	let exprCmd = '(p, i) => p+1';
+	let inferredPrecision = 0;
 	// groups is not null if there exists any named group
 	const groups = match.groups!;
 
@@ -92,6 +128,14 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		if (groups.expr) {
 			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`);
 			exprCmd = `(p,i) => ${groups.expr}`;
+			// Infer precision from step
+			if ((!groups.spec || groups.spec === 'f' && !groups.precision)) {
+				const floatSeqMatch = /^p[+-](?:\d*\.(?<frac1>\d+)|\d+\.(?<frac2>\d*))$/.exec(groups.expr);
+				if (floatSeqMatch?.groups) {
+					groups.spec = 'f';
+					inferredPrecision = (floatSeqMatch.groups?.frac1?.length ?? floatSeqMatch.groups?.frac2?.length ?? 0);
+				}
+			}
 		}
 		if (groups.init) {
 			const numMatch = /^[+-]?(?:\d+|\d*\.(?<frac1>\d+)|\d+\.(?<frac2>\d*))(?:[Ee][+-]?\d+)?$/.exec(groups.init);
@@ -99,14 +143,10 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				init = parseFloat(groups.init);
 				initCmd = groups.init;
 				// Infer precision from initial value
-				if (numMatch?.groups && (!groups.spec || groups.spec === 'f' && !groups.precision)) {
-					if (numMatch.groups?.frac1) {
+				if ((!groups.spec || groups.spec === 'f' && !groups.precision)) {
+					if (numMatch?.groups) {
 						groups.spec = 'f';
-						groups.precision = numMatch.groups.frac1;
-					}
-					if (numMatch.groups?.frac2) {
-						groups.spec = 'f';
-						groups.precision = numMatch.groups.frac2;
+						inferredPrecision = Math.max(inferredPrecision, (numMatch.groups?.frac1?.length ?? numMatch.groups?.frac2?.length ?? 0));
 					}
 				}
 			}
@@ -116,11 +156,16 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				formatter = (n: number) => toSpreadSheet(n, /^[a-z]$/.test(groups.init[0]));
 			}
 			else {
-				if (groups.expr) {
-					init = groups.init;
-					initCmd = `unk"${groups.init}"`;
-				} else {
-					initCmd = `unk"${groups.init}"=1`;
+				try {
+					init = eval(groups.init);
+					initCmd = `expr"${groups.init}"`;
+				} catch (e) {
+					if (groups.init.length === 1) {
+						init = groups.init.codePointAt(0);
+						initCmd = `unicode"${groups.init}"`;
+					} else {
+						initCmd = `unk"${groups.init}"=0`;
+					}
 				}
 			}
 		} else {
@@ -159,12 +204,12 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	}
 	// charcode
 	if (groups.spec === 'c') {
-		formatter = (n: number) => String.fromCharCode(n).replace(/[\r\n]/g, '');
+		formatter = (n: number) => String.fromCodePoint(n).replace(/[\r\n]/g, '');
 		formatCmd = `spec=char`;
 	}
 	// precision: only supports decimal floating point
 	if (groups.spec === 'f') {
-		let precision = 6;
+		let precision = inferredPrecision || 6;
 		const gprec = parseInt(groups.precision);
 		if (gprec) {
 			precision = gprec;
