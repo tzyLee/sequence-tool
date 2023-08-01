@@ -1,70 +1,153 @@
-# sequence README
+# Sequence Tool
 
-This is the README for your extension "sequence". After writing up a brief description, we recommend including the following sections.
+[Sequence Tool]() inserts sequences with live preview in Visual Studio Code.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+<p align="center">
+<img src="res/icon.png" alt="showcase" width="128px">
+</p>
 
-For example if there is an image subfolder under your extension project workspace:
+### Insert Custom Sequence With Multi-cursors - `sequence-tool.insertSequence`
 
-\!\[feature X\]\(images/feature-x.png\)
+Windows/Linux: <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>0</kbd>,
+Mac: <kbd>Cmd</kbd> + <kbd>Alt</kbd> + <kbd>0</kbd>
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+#### Linebreak insertion is not supported, use `sequence-tool.insertNLinesAfter` instead.
 
-## Requirements
+Command Syntax: `[[[fillChar]align][width][.prec][spec]],[init],[expr]` (A subset of Python's format specification mini-language).
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+Can contain only the `[init]` field, or separates the possibly empty field with `,`.
+
+| Field        | Definition                                                                                         |
+| :----------- | :------------------------------------------------------------------------------------------------- |
+| **fillChar** | Character used to pad to the given width. The alignment must be specified excpet for `fillChar=0`. |
+| **align**    | `>` for right-align and `<` for left-align within the available space.                             |
+| **.prec**    | The number of digits should be displayed after the decimal point for spec `f`.                     |
+| **spec**     | How the value should be displayed (see below).                                                     |
+| **init**     | Initial value of sequence, defaults to 0 (see below).                                              |
+| **expr**     | The function `(p, i) => expr` generates the next value of the sequence. (see below)                |
+
+#### Spec
+
+Can be one of the followings. Non-numeric values will be filtered when using numeric specs.
+
+| Field                   | Definition                                                                 |
+| :---------------------- | :------------------------------------------------------------------------- |
+| **b**                   | Binary number.                                                             |
+| **o**                   | Octal number.                                                              |
+| **d**                   | Decimal integer number.                                                    |
+| **h**,**x**,**H**,**X** | Hexadecimal number, use **H** or **X** for uppercase digits.               |
+| **f**                   | Decimal fractional numbers.                                                |
+| **c**                   | Converts to single Unicode character.                                      |
+| **b\d+**                | Convert to other bases, can be 2 to 36 (For example: **b36** for base 36). |
+
+#### Init
+
+| Type                      | Definition                                      |
+| :------------------------ | :---------------------------------------------- |
+| **Number**                | Number literal, can be fractional.              |
+| **English Letter**        | Generates the spreadsheet column name sequence. |
+| **JavaScript Expression** | Any valid javascript expressions.               |
+
+#### Expr
+
+Creates the function `(p, i) => expr`
+
+The default inital value won't be used if the **init** is unspecified and the **expr** does not contain **p**.
+
+| Parameter | Definition                                                  |
+| :-------- | :---------------------------------------------------------- |
+| **p**     | The previous value of the sequence, initalized by **init**. |
+| **i**     | Zero-based index of the sequence.                           |
+
+---
+
+### Insert N Lines After Cursors - `sequence-tool.insertNLinesAfter`
+
+Inserts N lines after the cursor(s). Creates N new cursors on each line inserted.
+
+---
+
+### Use Previous Saved Commands - `sequence-tool.useCommand`
+
+Use a predefined command in settings `sequence-tool.customCommands`.
+
+## Example
+
+### 1. _Basic Usage_
+
+`42` (initial value)
+
+### 2. Padding
+
+`#<5,42`
+
+### 3. Base conversion
+
+`07b,-6` (2's complement for binary number with 0 padding)
+
+`c,65` (ASCII/unicode)
+
+### 4. Other Practical Use
+
+`#>5,,''` (repeated characters)
+
+`,,'123'[(i/5|0)%3]` (cyclic and repeated)
+
+`AZ` (spreadsheet column names)
+
+### 5. Custom Sequence
+
+`,1,p*2` (p represents previous value, just like `Array.prototype.reduce`)
+
+`,,'abc'[i%3]` (i is 0-based index)
+
+`,1,p*(i+1)` (factorial, p and i can be used together)
+
+`d,,(((1+Math.sqrt(5))/2)**i-((1-Math.sqrt(5))/2)**i)/Math.sqrt(5)` (Fibonacci sequence)
+
+`,1,(4-6/(i+2))*p` (Catalan number, alternatively `,,(f=>f(f))(c=>x=>x?(4+6/~x)*(f=>f(f))(c)(x-1):1)(i)`)
+
+`` ,1,`${p}`.replace(/(.)\1*/g, m=>`${m.length}${m.substring(0, 1)}`)  `` (look and say sequence)
 
 ## Extension Settings
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
 This extension contributes the following settings:
 
-* `myExtension.enable`: enable/disable this extension
-* `myExtension.thing`: set to `blah` to do something
+- `sequence-tool.customCommands`: Stores your frequently used command here. These commands will appear in `sequence-tool.useCommand` command, and can be invoked by keybindings.
 
-## Known Issues
+### Example
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+| Name        | Value              |
+| :---------- | :----------------- |
+| **Catalan** | `,1,(4-6/(i+2))*p` |
+
+## Keybindings
+
+Commands can be invoked by custom keybindings.
+
+`Preferences: Open Keyboard Shortcuts (JSON)`
+
+```json
+// Execute a command (factorial) on keypress
+{
+   "key": "ctrl+alt+,",
+   "command": "sequence-tool.insertSequence",
+   "args": { "command": ",1,p*(i+1)" }
+},
+// Pick a preconfigured command (Catalan numbers) on keypress
+{
+  "key": "ctrl+alt+.",
+  "command": "sequence-tool.useCommand",
+  "args": { "name": "Catalan" }
+}
+```
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+See [CHANGELOG.md](CHANGELOG.md).
 
-### 1.0.0
+## Special Thanks!
 
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
------------------------------------------------------------------------------------------------------------
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-**Note:** You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+CMD+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux) or `Cmd+Space` (macOS) to see a list of Markdown snippets
-
-### For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+- The live preview is based on [tomoki1207/vscode-input-sequence](https://github.com/tomoki1207/vscode-input-sequence).
