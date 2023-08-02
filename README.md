@@ -35,7 +35,7 @@ You can defined custom commands from the settings ` sequence-tool.customCommands
 
 ### 1. Basic Usage
 
-- To create a basic sequence, simply use the initial value:
+- To create a basic sequence, simply use the [initial value](#init):
 
   ```
   42           // 42, 43, 44, 45, ...
@@ -51,7 +51,7 @@ You can defined custom commands from the settings ` sequence-tool.customCommands
 
 ### 3. Step
 
-- To create a sequence with custom step size, use the third parameter:
+- To create a sequence with custom step size, use the [third parameter](#expr):
 
   ```
   #<5,42,p+0.3 // 42.0#, 42.3#, 42.6#, ...
@@ -85,7 +85,7 @@ You can defined custom commands from the settings ` sequence-tool.customCommands
   ,,'123'[(i/4|0)%3] // 1,1,1,1, 2,2,2,2, 3,3,3,3, 1,...
   ```
 
-- Spreadsheet column names:
+- [Spreadsheet column names](#init):
 
   ```
   AZ           // AZ, BA, BB, BC, ...
@@ -129,14 +129,14 @@ The extension supports a variety of formatting options using a subset of Python'
 
 The command can either contain only the `[init]` field or separate the possibly empty field with `,`.
 
-| Field        | Definition                                                                                          |
-| :----------- | :-------------------------------------------------------------------------------------------------- |
-| **fillChar** | Character used to pad to the given width. The alignment must be specified, excpet for `fillChar=0`. |
-| **align**    | Use `>` for right-align and `<` for left-align within the available space.                          |
-| **.prec**    | The number of digits to be displayed after the decimal point for the `f` spec.                      |
-| **spec**     | Specifies how the value should be displayed (refer to details below).                               |
-| **init**     | Initial value of sequence, defaults to 0 (see details below).                                       |
-| **expr**     | The function `(p, i) => expr` generates the next value of the sequence. (see details below)         |
+| Field        | Definition                                                                                           |
+| :----------- | :--------------------------------------------------------------------------------------------------- |
+| **fillChar** | Character used to pad to the given width. The alignment must be specified, excpet for `fillChar=0`.  |
+| **align**    | Use `>` for right-align and `<` for left-align within the available space.                           |
+| **.prec**    | The number of digits to be displayed after the decimal point for the `f` spec.                       |
+| **spec**     | Specifies how the value should be displayed (refer to details [below](#spec)).                       |
+| **init**     | Initial value of sequence, defaults to 0 (see details [below](#init)).                               |
+| **expr**     | The function `(p, i) => expr` generates the next value of the sequence. (see details [below](#expr)) |
 
 #### Spec
 
