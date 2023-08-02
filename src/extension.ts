@@ -190,9 +190,9 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 	const match = (/^(?:(?:(?<fillChar>.)(?<align>[<>]))?(?<fillZero>0)?(?<width>[1-9]\d*)?(?:\.(?<precision>\d+))?(?<spec>[bodhxHXfc])?(?:b(?<base>\d+))?,)?(?:(?<init>[^,]+)?(?:,(?<expr>.+))?)?$/).exec(v);
 	let init: any = 0;
 	let stepFunc = (p: unknown, i: number) => isNumber(p) ? p + 1 : 0;
-	let Constructor: SequenceGenConstructor = PrevSequenceGen;
+	let constructor: SequenceGenConstructor = PrevSequenceGen;
 	if (!match) {
-		return [new Constructor(init, stepFunc), formatter, { message: `The command does not match the ${formatPrompt}`, severity: vscode.InputBoxValidationSeverity.Warning }];
+		return [new constructor(init, stepFunc), formatter, { message: `The command does not match the ${formatPrompt}`, severity: vscode.InputBoxValidationSeverity.Warning }];
 	}
 	let formatCmd = 'default';
 	let initCmd = '0';
@@ -203,7 +203,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 
 	try {
 		if (groups.expr) {
-			stepFunc = eval(`(function (p,i) { return (${groups.expr}); })`);
+			stepFunc = (0, eval)(`(function (p,i) { return (${groups.expr}); })`);
 			exprCmd = `(p,i) => ${groups.expr}`;
 			// Infer precision from step
 			if ((!groups.spec || groups.spec === 'f' && !groups.precision)) {
@@ -236,7 +236,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 			}
 			else {
 				try {
-					init = eval(groups.init);
+					init = (0, eval)(groups.init);
 					initCmd = `expr"${groups.init}"`;
 				} catch (e) {
 					if (groups.init.length === 1) {
@@ -252,7 +252,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 				// Use index gen if there's no inital value and the expression does not contain p
 				init = stepFunc(0, 0);
 				initCmd = init.toString();
-				Constructor = IndexSequenceGen;
+				constructor = IndexSequenceGen;
 			}
 		}
 	} catch (e: any) {
@@ -334,7 +334,7 @@ function parseCommand(v: string): [SequenceGen | null, Formatter, vscode.InputBo
 		};
 		formatCmd = `0>${groups.width},2's`;
 	}
-	return [new Constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }];
+	return [new constructor(init, stepFunc), formatter, { message: `Command: [${formatCmd}] , [${initCmd}] , [${exprCmd}]`, severity: vscode.InputBoxValidationSeverity.Info }];
 }
 
 function sortSelection(a: vscode.Selection, b: vscode.Selection): number {
