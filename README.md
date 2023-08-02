@@ -4,9 +4,7 @@ The [Sequence Tool]() extension for Visual Studio Code allows you to easily inse
 
 ## Features
 
-<p align="center">
-<img src="res/icon.png" alt="showcase" width="128px">
-</p>
+![Recording of Sequence Tool](res/demo.gif)
 
 ---
 
@@ -32,6 +30,8 @@ This command allows you to insert N lines after the cursor(s) and creates N new 
 You can defined custom commands from the settings ` sequence-tool.customCommands`. These commands will be accessible through the `sequence-tool.useCommand` command and can be invoked via keybindings.
 
 ## Example
+
+![Basic Usage](res/basic_usage.gif)
 
 ### 1. Basic Usage
 
@@ -181,9 +181,18 @@ This extension contributes the following settings:
 
 ### Example
 
-| Item        | Value              |
-| :---------- | :----------------- |
-| **Catalan** | `,1,(4-6/(i+2))*p` |
+![Custom Command Usage](res/custom.gif)
+
+Example Settings:
+
+| Item                | Value                                                                    |
+| :------------------ | :----------------------------------------------------------------------- |
+| **ascii uppercase** | `c,65,i<26?p+1:''`                                                       |
+| **day of week**     | `,,['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][i%7]`                     |
+| **factorial**       | `,1,p*(i+1)`                                                             |
+| **Fibonacci**       | `d,,(((1+Math.sqrt(5))/2)**i-((1-Math.sqrt(5))/2)**i)/Math.sqrt(5)`      |
+| **Catalan**         | `,1,(4-6/(i+2))*p`                                                       |
+| **Look and say**    | `` ,1,`${p}`.replace(/(.)\1*/g, m=>`${m.length}${m.substring(0, 1)}`) `` |
 
 ## Keybindings
 
