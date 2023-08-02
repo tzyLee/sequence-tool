@@ -25,6 +25,7 @@
   "bugs": {
     "url": "https://github.com/tzyLee/sequence-tool/issues"
   },
+  "license": "MIT",
   "icon": "res/icon.png",
   "activationEvents": [],
   "main": "./out/extension.js",
