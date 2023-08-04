@@ -11,3 +11,4 @@ vsc-extension-quickstart.md
 node_modules/**
 out/test/**
 res/*.gif
+.vscode-test-web/**

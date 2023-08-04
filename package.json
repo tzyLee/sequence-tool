@@ -29,6 +29,21 @@
   "icon": "res/icon.png",
   "activationEvents": [],
   "main": "./out/extension.js",
+  "browser": "./out/web-extension.js",
+  "capabilities": {
+    "virtualWorkspaces": true,
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "The 'customCommands' settings could contain malicious code in an untrusted workspace.",
+      "restrictedConfigurations": [
+        "sequence-tool.customCommands"
+      ]
+    }
+  },
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
   "contributes": {
     "commands": [
       {
@@ -73,11 +88,14 @@
     "pretest": "yarn run test-compile && yarn run lint",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "vscode:prepublish": "yarn run esbuild-base -- --minify",
+    "vscode:prepublish": "yarn run -S esbuild-base --minify && yarn run -S esbuild-web --minify",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --outfile=out/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild": "yarn run esbuild-base -- --sourcemap",
     "watch": "yarn run esbuild-base -- --sourcemap --watch",
-    "build": "yarn run -S esbuild-base -- --sourcemap --sources-content=false"
+    "esbuild-web": "esbuild ./src/extension.ts --bundle --tsconfig=./tsconfig.json --outfile=out/web-extension.js --external:vscode --format=cjs --platform=browser ",
+    "watch-web": "yarn run -S esbuild-web -- --sourcemap --sources-content=false --watch",
+    "build": "yarn run -S esbuild-base -- --sourcemap --sources-content=false",
+    "open-in-browser": "vscode-test-web --extensionDevelopmentPath=. ."
   },
   "devDependencies": {
     "@types/glob": "^7.1.4",
@@ -87,6 +105,7 @@
     "@typescript-eslint/eslint-plugin": "^5.1.0",
     "@typescript-eslint/parser": "^5.1.0",
     "@vscode/test-electron": "^1.6.2",
+    "@vscode/test-web": "^0.0.44",
     "esbuild": "^0.18.17",
     "eslint": "^8.1.0",
     "glob": "^7.1.7",

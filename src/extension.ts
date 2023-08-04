@@ -112,10 +112,19 @@ export function activate(context: vscode.ExtensionContext) {
 					description: customCommands[name]
 				} as vscode.QuickPickItem));
 
+				let placeHolder = 'Choose Command';
+				if (options.length === 0) {
+					if (!vscode.workspace.isTrusted) {
+						placeHolder = 'No settings from untrusted workspaces are applied.';
+					} else {
+						placeHolder = "Add new commands in setting 'sequence-tool.customCommands'.";
+					}
+				}
+
 				const pickedOption = await vscode.window.showQuickPick(options, {
 					matchOnDescription: true,
 					matchOnDetail: true,
-					placeHolder: 'Choose Command',
+					placeHolder: placeHolder,
 					async onDidSelectItem(item: vscode.QuickPickItem) {
 						if (!item?.description) {
 							return;

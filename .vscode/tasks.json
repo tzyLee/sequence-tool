@@ -17,6 +17,14 @@
       "group": "build",
       "problemMatcher": "$esbuild",
       "label": "npm: build"
+    },
+    {
+      "type": "npm",
+      "script": "watch-web",
+      "group": "build",
+      "problemMatcher": "$esbuild-watch",
+      "isBackground": true,
+      "label": "npm: watch web"
     }
   ]
 }
