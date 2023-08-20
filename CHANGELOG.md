@@ -4,6 +4,12 @@ All notable changes to the "sequence" extension will be documented in this file.
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.3]
+
+- Fix a bug related to insertion preview
+  - The preview produced a wrong result when delete some characters with zero-width selections.
+- Change the `activationEvents` to `onStartupFinished` to prevent the command execution from begin blocked by slow activating extensions.
+
 ## [0.0.2]
 
 - Properly handle workspace trust
