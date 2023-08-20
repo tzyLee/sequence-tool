@@ -361,6 +361,8 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 		}
 		// always insert at the end of selections
 		const len = initialSelections.length;
+		let lastLine = -1;
+		let curCharDelta = 0; // records the number of character delted so far on current line
 		for (let i = 0; i < len; i++) {
 			const initSel = initialSelections[i];
 			const sel = selections[i];
@@ -380,9 +382,14 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 				let r = new vscode.Range(sel.start.translate(0, +dChar), sel.end);
 				// r.start !== initSel.end (not always equal)
 				if (sel.isEmpty) {
+					if (lastLine !== sel.start.line) {
+						curCharDelta = 0;
+					}
 					// If the selection is empty, it is in cursor mode
 					// The selection is a zero-size selection and moves after insert
-					r = r.with(initSel.end, sel.end);
+					r = r.with(initSel.end.translate(0, +curCharDelta), sel.end);
+					curCharDelta += r.end.character - r.start.character;
+					lastLine = sel.start.line;
 				}
 				builder.delete(r);
 			}
