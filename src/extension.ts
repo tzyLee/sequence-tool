@@ -14,6 +14,13 @@ interface CustomCommandConfig {
 	[key: string]: string;
 }
 
+const sequenceInsertionDecorationType = vscode.window.createTextEditorDecorationType({
+	overviewRulerColor: 'blue',
+	overviewRulerLane: vscode.OverviewRulerLane.Right,
+	backgroundColor: new vscode.ThemeColor('editor.findMatchHighlightBackground'),
+	borderColor: new vscode.ThemeColor('editor.findMatchHighlightBorder'),
+});
+
 const formatPrompt = 'format: [[fillChar][align][width][.prec][spec] ","][init]["," [expr]]';
 
 // this method is called when your extension is activated
@@ -158,6 +165,7 @@ class CommandHandler {
 		// When the inputbox is active, the previews cannot be clear with 'undo' command
 		// the text in the inputbox would be undoed instead
 		await insertSequence(this.editor, this.initialSelections, gen, fmt, { undoStopBefore: !this.editMade, undoStopAfter: false }, true, this.editMade);
+		highlightPreview(this.editor, this.initialSelections);
 		this.editMade = true;
 		return msg;
 	}
@@ -168,6 +176,7 @@ class CommandHandler {
 		}
 		// Clear preview
 		await vscode.commands.executeCommand('undo');
+		this.editor.setDecorations(sequenceInsertionDecorationType, []);
 		// Make sure the undo only happens once
 		this.editMade = false;
 	}
@@ -400,6 +409,28 @@ async function insertSequence(editor: vscode.TextEditor, initialSelections: vsco
 			builder.insert(sel.end, (val === undefined || val === null) ? '' : fmt(val));
 		}
 	}, option);
+}
+
+function highlightPreview(editor: vscode.TextEditor, initialSelections: vscode.Selection[]) {
+	let lastLine = -1;
+	let curCharDelta = 0; // records the number of character delted so far on current line
+	const cursel = [...editor.selections].sort(sortSelection);
+	let selectionsInRange = cursel.map((sel, i) => {
+		const initSel = initialSelections[i];
+		let dChar = length(initSel);
+		// Same as above
+		let r = new vscode.Range(sel.start.translate(0, +dChar), sel.end);
+		if (sel.isEmpty) {
+			if (lastLine !== sel.start.line) {
+				curCharDelta = 0;
+			}
+			r = r.with(initSel.end.translate(0, +curCharDelta), sel.end);
+			curCharDelta += r.end.character - r.start.character;
+			lastLine = sel.start.line;
+		}
+		return r;
+	});
+	editor.setDecorations(sequenceInsertionDecorationType, selectionsInRange);
 }
 
 class PrevSequenceGen implements Iterator<unknown, unknown, unknown> {
