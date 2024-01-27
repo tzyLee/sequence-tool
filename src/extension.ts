@@ -65,6 +65,10 @@ export function activate(context: vscode.ExtensionContext) {
 				placeHolder: 'Number of line(s) to insert',
 				async validateInput(value) {
 					if (/^\s*\d+\s*$/.test(value)) {
+						const limit = parseFloat(vscode.workspace.getConfiguration().get("editor.multiCursorLimit") ?? 'Infinity');
+						if (parseInt(value) > limit) {
+							return { message: `The value exceeds \`editor.multiCursorLimit\`=${limit}`, severity: vscode.InputBoxValidationSeverity.Warning };
+						}
 						return '';
 					}
 					return { message: 'Should be a nonnegative integer', severity: vscode.InputBoxValidationSeverity.Warning };
